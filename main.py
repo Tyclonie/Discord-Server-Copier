@@ -7,6 +7,19 @@ class UserDict:
     def __init__(self):
         self.data = {}
 
+    def get_lowest(self, guild_id, channel_id):
+        lowest = None
+        iterations = 0
+        data = self.data[guild_id][channel_id]
+        for user_id in data:
+            if iterations == 0:
+                lowest = user_id
+            if iterations > 0:
+                if data.get(lowest)[1] > data.get(user_id)[1]:
+                    lowest = user_id
+            iterations += 1
+        return lowest
+
 
 class ServerCopier(discord.Client):
     def add_events(self):
@@ -31,19 +44,40 @@ class ServerCopier(discord.Client):
                     for channel in category.channels:
                         data[old_guild.id][channel.id] = {}
                         new_channel = await new_category.create_text_channel(channel.name)
-                        history = await channel.history(limit=200).flatten()
-                        history = reversed(history)
-                        for message in history:
-                            if message.author.id in data[old_guild.id][channel.id]:
-                                webhook = discord.Webhook.from_url(data[old_guild.id][channel.id][message.author.id],
-                                                                   adapter=discord.RequestsWebhookAdapter())
-                                webhook.send(message.content)
-                            else:
-                                webhook = await new_channel.create_webhook(name=message.author.name)
-                                data[old_guild.id][channel.id][message.author.id] = webhook.url
-                                webhook = discord.Webhook.from_url(data[old_guild.id][channel.id][message.author.id],
-                                                                   adapter=discord.RequestsWebhookAdapter())
-                                webhook.send(message.content)
+                        try:
+                            history = await channel.history(limit=200).flatten()
+                            history = reversed(history)
+                            for message in history:
+                                if message.content != "":
+                                    if message.author.id in data[old_guild.id][channel.id]:
+                                        user_webhook_data = data[old_guild.id][channel.id][message.author.id]
+                                        webhook = discord.Webhook.from_url(user_webhook_data[0],
+                                                                           adapter=discord.RequestsWebhookAdapter())
+                                        webhook.send(message.content)
+                                        user_webhook_data[1] = user_webhook_data[1] + 1
+                                    else:
+                                        try:
+                                            webhook = await new_channel.create_webhook(name=message.author.name)
+                                        except discord.HTTPException:
+                                            user_id = self.data.get_lowest(old_guild.id, channel.id)
+                                            webhook_to_delete = data[old_guild.id][channel.id][user_id][0]
+                                            webhook = discord.Webhook.from_url(webhook_to_delete,
+                                                                               adapter=discord.RequestsWebhookAdapter())
+                                            webhook.delete()
+                                            data[old_guild.id][channel.id].pop(user_id, None)
+                                            webhook = await new_channel.create_webhook(name=message.author.name)
+                                        data[old_guild.id][channel.id][message.author.id] = [webhook.url, 0]
+                                        user_webhook_data = data[old_guild.id][channel.id][message.author.id]
+                                        webhook = discord.Webhook.from_url(user_webhook_data[0],
+                                                                           adapter=discord.RequestsWebhookAdapter())
+                                        webhook.send(message.content)
+                                        user_webhook_data[1] = user_webhook_data[1] + 1
+                                else:
+                                    await new_channel.send(
+                                        f"This is an empty message. It is likely a join message saying {message.author} joined the server.")
+                        except AttributeError:
+                            await new_channel.delete()
+                            await new_category.create_voice_channel(channel.name)
                 print("///    ///    ///    ///    ///    ///    ///")
                 print(f"Completed copy of {old_guild.name}")
                 print(f"Server copy is stored in {new_guild.name}")
