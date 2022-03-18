@@ -1,11 +1,17 @@
 import time
 import asyncio
 import discord
+import requests
 
 
 class UserDict:
     def __init__(self):
         self.data = {}
+
+    def reset_user_uses(self, guild_id, channel_id):
+        data = self.data[guild_id][channel_id]
+        for user_id in data:
+            data[user_id][1] = 0
 
     def get_lowest(self, guild_id, channel_id):
         lowest = None
@@ -18,6 +24,7 @@ class UserDict:
                 if data.get(lowest)[1] > data.get(user_id)[1]:
                     lowest = user_id
             iterations += 1
+        self.reset_user_uses(guild_id, channel_id)
         return lowest
 
 
@@ -57,7 +64,7 @@ class ServerCopier(discord.Client):
                                         user_webhook_data[1] = user_webhook_data[1] + 1
                                     else:
                                         try:
-                                            webhook = await new_channel.create_webhook(name=message.author.name)
+                                            webhook = await new_channel.create_webhook(name=message.author.name, avatar=requests.get(message.author.avatar_url).content)
                                         except discord.HTTPException:
                                             user_id = self.data.get_lowest(old_guild.id, channel.id)
                                             webhook_to_delete = data[old_guild.id][channel.id][user_id][0]
@@ -65,7 +72,8 @@ class ServerCopier(discord.Client):
                                                                                adapter=discord.RequestsWebhookAdapter())
                                             webhook.delete()
                                             data[old_guild.id][channel.id].pop(user_id, None)
-                                            webhook = await new_channel.create_webhook(name=message.author.name)
+                                            webhook = await new_channel.create_webhook(name=message.author.name,
+                                                                                       avatar=requests.get(message.author.avatar_url).content)
                                         data[old_guild.id][channel.id][message.author.id] = [webhook.url, 0]
                                         user_webhook_data = data[old_guild.id][channel.id][message.author.id]
                                         webhook = discord.Webhook.from_url(user_webhook_data[0],
